@@ -107,7 +107,6 @@ RUN \
   [ -n "$NET_SSLEAY_SHA256" ] && \
     echo "$NET_SSLEAY_SHA256  $NET_SSLEAY_TAR" | sha256sum -c ; \
   mkdir /src_ssleay && \
-  set -x && \
   tar -xzf $NET_SSLEAY_TAR --strip-components=1 -C /src_ssleay && \
   cd /src_ssleay && \
   patch < ${NET_SSLEAY_PATCH_PATH} && \
