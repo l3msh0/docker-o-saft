@@ -4,19 +4,16 @@ LABEL maintainer="L3msh0@gmail.com"
 ARG     OSAFT_VERSION="17.09.17"
 ARG     OSAFT_DIR="/O-Saft"
 ARG     OSAFT_URL="https://github.com/OWASP/O-Saft/archive/${OSAFT_VERSION}.tar.gz"
-ARG     OSAFT_TAR="o-saft.${OSAFT_VERSION}.tar.gz"
 ARG     OSAFT_SHA256="18b76650dfca268e32647140a3ef55536dc536182776af62290c916695230ca7"
 
 ARG     OPENSSL_VERSION="1.0.2-chacha"
 ARG     OPENSSL_DIR="/openssl"
 ARG     OPENSSL_URL="https://github.com/PeterMosmans/openssl/archive/${OPENSSL_VERSION}.tar.gz"
-ARG     OPENSSL_TAR="openssl.${OPENSSL_VERSION}.tar.gz"
 ARG     OPENSSL_SHA256="ad3d99ec091e403a3a7a678ddda38b392e3204515425827c53dc5baa92d61d67"
 
 ARG     NET_SSLEAY_VERSION="1.81"
 ARG     NET_SSLEAY_URL="http://search.cpan.org/CPAN/authors/id/M/MI/MIKEM/Net-SSLeay-${NET_SSLEAY_VERSION}.tar.gz"
 ARG     NET_SSLEAY_SHA256="00cbb6174e628b42178e1445c9fd5a3c5ae2cfd6a5a43e03610ba14786f21b7d"
-ARG     NET_SSLEAY_TAR="Net-SSLeay-${NET_SSLEAY_VERSION}.tar.gz"
 ARG     NET_SSLEAY_PATCH_FILE="SSLeay.xs.enable_weakssl.diff"
 ARG     NET_SSLEAY_PATCH_PATH="/${NET_SSLEAY_PATCH_FILE}"
 ADD     ./patch/${NET_SSLEAY_PATCH_FILE} ${NET_SSLEAY_PATCH_PATH}
@@ -29,23 +26,24 @@ WORKDIR /
 
 # Pull, build and install enhanced openssl
 RUN \
-  apk add --no-cache ncurses perl perl-readonly perl-net-dns perl-io-socket-ssl krb5-libs openssl && \
+  apk add --upgrade --no-cache \
+    ncurses perl perl-readonly perl-net-dns perl-io-socket-ssl krb5-libs openssl ca-certificates && \
+  update-ca-certificates && \
 \
   # pull and extract module
-  mkdir $OPENSSL_DIR /src_openssl && \
-  wget $OPENSSL_URL -O $OPENSSL_TAR && \
+  wget $OPENSSL_URL -O /tmp/openssl.tar.gz && \
 \
   # check sha256 if there is one
   [ -n "$OPENSSL_SHA256" ] && \
-    echo "$OPENSSL_SHA256  $OPENSSL_TAR" | sha256sum -c ; \
+    echo "$OPENSSL_SHA256  /tmp/openssl.tar.gz" | sha256sum -c ; \
 \
-  tar -xzf $OPENSSL_TAR -C /src_openssl --strip-components=1 && \
+  tar -xzf /tmp/openssl.tar.gz -C /tmp && \
 \
-  cd /src_openssl && \
+  cd /tmp/openssl-* && \
 \
   # build openssl {
   # install development tools
-  apk add --no-cache --virtual .builddeps alpine-sdk linux-headers gmp-dev lksctp-tools-dev krb5-dev zlib-dev perl-dev && \
+  apk add --upgrade --no-cache --virtual .builddeps alpine-sdk linux-headers gmp-dev lksctp-tools-dev krb5-dev zlib-dev perl-dev && \
 \
   # patch openssl.cnf for GOST
   sed -i '/RANDFILE/a openssl_conf=openssl_def' apps/openssl.cnf  && \
@@ -99,36 +97,34 @@ RUN \
   # build openssl }
 \
   cd / && \
-  rm -rf /src_openssl $OPENSSL_TAR && \
+  rm -rf /tmp/openssl* && \
   # Installing Net::SSLeay
-  cd / && \
-  wget $NET_SSLEAY_URL -O $NET_SSLEAY_TAR && \
+  wget $NET_SSLEAY_URL -O /tmp/Net-SSLeay.tar.gz && \
   # check sha256 if there is one
   [ -n "$NET_SSLEAY_SHA256" ] && \
-    echo "$NET_SSLEAY_SHA256  $NET_SSLEAY_TAR" | sha256sum -c ; \
-  mkdir /src_ssleay && \
-  tar -xzf $NET_SSLEAY_TAR --strip-components=1 -C /src_ssleay && \
-  cd /src_ssleay && \
+    echo "$NET_SSLEAY_SHA256  /tmp/Net-SSLeay.tar.gz" | sha256sum -c ; \
+  tar -xzf /tmp/Net-SSLeay.tar.gz -C /tmp && \
+  cd /tmp/Net-SSLeay-* && \
   patch < ${NET_SSLEAY_PATCH_PATH} && \
   env OPENSSL_PREFIX=/openssl perl Makefile.PL PREFIX=/usr/local INC="-I /openssl/include" DEFINE=-DOPENSSL_BUILD_UNSAFE=1 && \
   make && \
   make install && \
-  rm ${NET_SSLEAY_PATCH_PATH} && \
+  rm -rf /tmp/Net-SSLeay* ${NET_SSLEAY_PATCH_PATH} && \
+\
+  # cleanup
+  apk del --purge .builddeps openssl && \
 \
   # Pull and install O-Saft
   cd / && \
   mkdir $OSAFT_DIR && \
   adduser -D -h ${OSAFT_DIR} osaft && \
 \
-  # cleanup
-  apk del --purge .builddeps openssl && \
-\
-  wget  $OSAFT_URL -O $OSAFT_TAR && \
+  wget $OSAFT_URL -O /tmp/osaft.tar.gz && \
   # check sha256 if there is one
   [ -n "$OSAFT_SHA256" ] && \
-    echo "$OSAFT_SHA256  $OSAFT_TAR" | sha256sum -c ; \
+    echo "$OSAFT_SHA256  /tmp/osaft.tar.gz" | sha256sum -c ; \
 \
-  tar -xzf $OSAFT_TAR --strip-components=1 -C $OSAFT_DIR && \
+  tar -xzf /tmp/osaft.tar.gz --strip-components=1 -C $OSAFT_DIR && \
   chown -R root:root $OSAFT_DIR && \
   chown -R osaft:osaft $OSAFT_DIR/contrib && \
   chown osaft:osaft $OSAFT_DIR/.o-saft.pl  && \
@@ -139,10 +135,10 @@ RUN \
     < $OSAFT_DIR/.o-saft.pl-orig \
     > $OSAFT_DIR/.o-saft.pl && \
   chmod 666 $OSAFT_DIR/.o-saft.pl && \
-  rm -f $OSAFT_TAR
+  rm -f /tmp/osaft.tar.gz
 
 WORKDIR $OSAFT_DIR
 USER    osaft
 
-ENTRYPOINT ["perl", "/O-Saft/o-saft.pl"]
+ENTRYPOINT ["perl", "./o-saft.pl"]
 CMD     ["--norc", "--help"]
